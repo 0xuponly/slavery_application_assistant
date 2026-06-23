@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import Modal from '../components/Modal'
 import type { CreateJobInput, Job } from '../types'
@@ -27,7 +27,68 @@ export default function JobsPage() {
   const [form, setForm] = useState<CreateJobInput>(EMPTY_FORM)
   const [selectedJob, setSelectedJob] = useState<Job | null>(null)
   const [saving, setSaving] = useState(false)
+  const [filterLocation, setFilterLocation] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
+  const [filterSource, setFilterSource] = useState('')
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const linkInputRef = useRef<HTMLInputElement>(null)
+
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((j) => {
+      if (filterLocation && (j.location || '—') !== filterLocation) return false
+      if (filterStatus && j.status !== filterStatus) return false
+      if (filterSource && (j.source || '—') !== filterSource) return false
+      return true
+    })
+  }, [jobs, filterLocation, filterStatus, filterSource])
+
+  const allFilteredSelected = useMemo(
+    () => filteredJobs.length > 0 && filteredJobs.every((j) => selectedIds.has(j.id)),
+    [filteredJobs, selectedIds]
+  )
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredJobs.map((j) => j.id)))
+    }
+  }
+
+  async function handleBatchDelete() {
+    const count = selectedIds.size
+    if (!confirm(`Delete ${count} job${count === 1 ? '' : 's'} and all related data?`)) return
+    for (const id of selectedIds) {
+      await api.deleteJob(id)
+    }
+    setJobs((prev) => prev.filter((j) => !selectedIds.has(j.id)))
+    if (selectedJob && selectedIds.has(selectedJob.id)) setSelectedJob(null)
+    setSelectedIds(new Set())
+  }
+
+  const filterOptions = useMemo(() => {
+    const locations = new Set<string>()
+    const statuses = new Set<string>()
+    const sources = new Set<string>()
+    for (const j of jobs) {
+      locations.add(j.location || '—')
+      statuses.add(j.status)
+      sources.add(j.source || '—')
+    }
+    return {
+      locations: [...locations].sort(),
+      statuses: [...statuses].sort(),
+      sources: [...sources].sort()
+    }
+  }, [jobs])
 
   useEffect(() => {
     loadJobs()
@@ -126,18 +187,23 @@ export default function JobsPage() {
         <p>Source and manage job postings</p>
       </div>
 
-      <div className="toolbar">
-        <input
-          className="search-input"
-          placeholder="Search jobs..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div className="spacer" />
-        <button className="btn btn-primary" onClick={() => setShowAddLink(true)}>
-          + Add from link
-        </button>
-      </div>
+        <div className="toolbar">
+          <input
+            className="search-input"
+            placeholder="Search jobs..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="spacer" />
+          {selectedIds.size > 0 && (
+            <button className="btn btn-danger btn-sm" onClick={handleBatchDelete} style={{ marginRight: 8 }}>
+              Delete selected ({selectedIds.size})
+            </button>
+          )}
+          <button className="btn btn-primary" onClick={() => setShowAddLink(true)}>
+            + Add from link
+          </button>
+        </div>
 
       <div className="alert alert-info">
         Paste a job posting URL from supported crypto job boards (LinkedIn, Indeed, Greenhouse, Lever, Glassdoor, Cryptocurrency Jobs, CryptoJobsList, cryptojobs.com, Crypto.jobs, Web3.career, and more). We'll only add the job if we can source the title, company, and description.
@@ -155,17 +221,63 @@ export default function JobsPage() {
         <table className="table">
           <thead>
             <tr>
+              <th style={{ width: 40 }}>
+                <input
+                  type="checkbox"
+                  checked={allFilteredSelected}
+                  onChange={toggleSelectAll}
+                  style={{ cursor: 'pointer' }}
+                />
+              </th>
               <th>Company</th>
               <th>Title</th>
-              <th>Location</th>
-              <th>Status</th>
-              <th>Source</th>
+              <th>
+                <div className="filter-header">
+                  <span>Location</span>
+                  <select value={filterLocation} onChange={(e) => setFilterLocation(e.target.value)}>
+                    <option value="">All</option>
+                    {filterOptions.locations.map((l) => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+              </th>
+              <th>
+                <div className="filter-header">
+                  <span>Status</span>
+                  <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}>
+                    <option value="">All</option>
+                    {filterOptions.statuses.map((s) => (
+                      <option key={s} value={s}>{STATUS_LABELS[s as Job['status']]}</option>
+                    ))}
+                  </select>
+                </div>
+              </th>
+              <th>
+                <div className="filter-header">
+                  <span>Source</span>
+                  <select value={filterSource} onChange={(e) => setFilterSource(e.target.value)}>
+                    <option value="">All</option>
+                    {filterOptions.sources.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                </div>
+              </th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {jobs.map((job) => (
+            {filteredJobs.map((job) => (
               <tr key={job.id} style={{ cursor: 'pointer' }} onClick={() => setSelectedJob(job)}>
+                <td style={{ width: 40 }} onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(job.id)}
+                    onChange={() => toggleSelect(job.id)}
+                    style={{ cursor: 'pointer' }}
+                  />
+                </td>
                 <td><strong>{job.company}</strong></td>
                 <td>{job.title}</td>
                 <td>{job.location ?? '—'}</td>

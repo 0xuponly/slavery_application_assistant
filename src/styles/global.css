@@ -239,6 +239,22 @@ textarea {
   border-bottom: 1px solid var(--border);
 }
 
+.filter-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-header select {
+  font-size: 11px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  max-width: 140px;
+}
+
 .table td {
   padding: 12px;
   border-bottom: 1px solid var(--border);

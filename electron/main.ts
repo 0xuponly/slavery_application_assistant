@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import * as db from './database'
 import { tailorDocument, generateFollowUpMessage } from './ai'
 import { scrapeJobFromUrl } from './jobScraper'
+import { scanAllBoards } from './jobSearch'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
 import type {
@@ -14,9 +15,18 @@ import type {
   Interview,
   Job,
   JobStatus,
+  ScanFilters,
+  ScanResult,
   Settings,
   TailorRequest
 } from './types'
+
+// Module-level scan state — survives tab switches in the renderer
+let _scanState: { scanning: boolean; progress: string[]; result: ScanResult | null } = {
+  scanning: false,
+  progress: [],
+  result: null
+}
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -70,6 +80,33 @@ function registerIpc(): void {
   ipcMain.handle('jobs:importFromUrl', async (_e, url: string) => {
     const input = await scrapeJobFromUrl(url)
     return db.createJob(input)
+  })
+
+  ipcMain.handle('jobs:scanBoards', async (e, filters?: ScanFilters) => {
+    _scanState.scanning = true
+    _scanState.progress = []
+    _scanState.result = null
+    try {
+      const result = await scanAllBoards(filters, (msg) => {
+        _scanState.progress.push(msg)
+        e.sender.send('scan:progress', msg)
+      })
+      _scanState.result = result
+      return result
+    } finally {
+      _scanState.scanning = false
+    }
+  })
+
+  ipcMain.handle('scan:status', () => ({
+    scanning: _scanState.scanning,
+    progress: [..._scanState.progress],
+    result: _scanState.result
+  }))
+
+  ipcMain.handle('scan:clearResult', () => {
+    _scanState.result = null
+    _scanState.progress = []
   })
 
   ipcMain.handle('documents:list', (_e, jobId?: number) => db.listDocuments(jobId))

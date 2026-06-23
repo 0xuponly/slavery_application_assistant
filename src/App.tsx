@@ -7,6 +7,7 @@ import DocumentsPage from './pages/DocumentsPage'
 import FollowUpsPage from './pages/FollowUpsPage'
 import InterviewsPage from './pages/InterviewsPage'
 import SettingsPage from './pages/SettingsPage'
+import ScanJobsPage from './pages/ScanJobsPage'
 import type { Page } from './types'
 
 export default function App() {
@@ -16,6 +17,8 @@ export default function App() {
     switch (page) {
       case 'dashboard':
         return <Dashboard onNavigate={(p) => setPage(p as Page)} />
+      case 'scanjobs':
+        return <ScanJobsPage />
       case 'jobs':
         return <JobsPage />
       case 'pipeline':

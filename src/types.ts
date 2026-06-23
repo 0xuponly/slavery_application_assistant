@@ -118,6 +118,7 @@ export interface CreateJobInput {
 
 export type Page =
   | 'dashboard'
+  | 'scanjobs'
   | 'jobs'
   | 'pipeline'
   | 'documents'
@@ -136,6 +137,36 @@ export const STATUS_LABELS: Record<JobStatus, string> = {
   offer: 'Offer',
   rejected: 'Rejected',
   withdrawn: 'Withdrawn'
+}
+
+export type WorkType = 'any' | 'remote' | 'hybrid' | 'in_office'
+
+export interface ScanFilters {
+  keywords?: string
+  location?: string
+  workType?: WorkType
+}
+
+export interface ScanBoardResult {
+  board: string
+  found: number
+  added: number
+  skipped: number
+  error?: string
+}
+
+export interface ScanResult {
+  totalFound: number
+  totalAdded: number
+  totalSkipped: number
+  boards: ScanBoardResult[]
+  errors: string[]
+}
+
+export interface ScanStatus {
+  scanning: boolean
+  progress: string[]
+  result: ScanResult | null
 }
 
 export const STATUS_COLORS: Record<JobStatus, string> = {

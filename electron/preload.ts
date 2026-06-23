@@ -9,6 +9,9 @@ import type {
   Interview,
   Job,
   JobStatus,
+  ScanFilters,
+  ScanResult,
+  ScanStatus,
   Settings,
   TailorRequest,
   TailorResult
@@ -23,6 +26,7 @@ export interface Api {
   deleteJob: (id: number) => Promise<void>
   searchJobs: (query: string) => Promise<Job[]>
   importJobFromUrl: (url: string) => Promise<Job>
+  scanBoards: (filters?: ScanFilters) => Promise<ScanResult>
   listDocuments: (jobId?: number) => Promise<Document[]>
   createDocument: (type: 'cv' | 'cover_letter', title: string, content: string, jobId?: number) => Promise<Document>
   updateDocument: (id: number, title: string, content: string) => Promise<Document>
@@ -56,6 +60,9 @@ export interface Api {
   addApiModel: (model: Omit<ApiModelConfig, 'id'>) => Promise<ApiModelConfig[]>
   deleteApiModel: (id: string) => Promise<ApiModelConfig[]>
   tailorDocument: (request: TailorRequest) => Promise<TailorResult>
+  getScanStatus: () => Promise<ScanStatus>
+  clearScanResult: () => Promise<void>
+  onScanProgress: (cb: (msg: string) => void) => () => void
   openExternal: (url: string) => Promise<void>
 }
 
@@ -68,6 +75,14 @@ const api: Api = {
   deleteJob: (id) => ipcRenderer.invoke('jobs:delete', id),
   searchJobs: (query) => ipcRenderer.invoke('jobs:search', query),
   importJobFromUrl: (url) => ipcRenderer.invoke('jobs:importFromUrl', url),
+  scanBoards: (filters) => ipcRenderer.invoke('jobs:scanBoards', filters),
+  getScanStatus: () => ipcRenderer.invoke('scan:status'),
+  clearScanResult: () => ipcRenderer.invoke('scan:clearResult'),
+  onScanProgress: (cb: (msg: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, msg: string) => cb(msg)
+    ipcRenderer.on('scan:progress', handler)
+    return () => ipcRenderer.removeListener('scan:progress', handler)
+  },
   listDocuments: (jobId) => ipcRenderer.invoke('documents:list', jobId),
   createDocument: (type, title, content, jobId) =>
     ipcRenderer.invoke('documents:create', type, title, content, jobId),

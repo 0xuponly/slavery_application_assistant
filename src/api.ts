@@ -8,6 +8,9 @@ import type {
   Interview,
   Job,
   JobStatus,
+  ScanFilters,
+  ScanResult,
+  ScanStatus,
   Settings,
   TailorRequest,
   TailorResult
@@ -22,6 +25,7 @@ export interface Api {
   deleteJob: (id: number) => Promise<void>
   searchJobs: (query: string) => Promise<Job[]>
   importJobFromUrl: (url: string) => Promise<Job>
+  scanBoards: (filters?: ScanFilters) => Promise<ScanResult>
   listDocuments: (jobId?: number) => Promise<Document[]>
   createDocument: (type: 'cv' | 'cover_letter', title: string, content: string, jobId?: number) => Promise<Document>
   updateDocument: (id: number, title: string, content: string) => Promise<Document>
@@ -55,6 +59,9 @@ export interface Api {
   addApiModel: (model: Omit<ApiModelConfig, 'id'>) => Promise<ApiModelConfig[]>
   deleteApiModel: (id: string) => Promise<ApiModelConfig[]>
   tailorDocument: (request: TailorRequest) => Promise<TailorResult>
+  getScanStatus: () => Promise<ScanStatus>
+  clearScanResult: () => Promise<void>
+  onScanProgress: (cb: (msg: string) => void) => () => void
   openExternal: (url: string) => Promise<void>
 }
 
