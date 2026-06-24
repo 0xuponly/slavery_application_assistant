@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import * as db from './database'
-import { tailorDocument, generateFollowUpMessage } from './ai'
+import { tailorDocument, generateFollowUpMessage, regenerateSection } from './ai'
 import { scrapeJobFromUrl } from './jobScraper'
 import { scanAllBoards, scoreCompatibility } from './jobSearch'
 import { PDFParse } from 'pdf-parse'
@@ -133,6 +133,9 @@ function registerIpc(): void {
     db.updateDocument(id, title, content)
   )
   ipcMain.handle('documents:delete', (_e, id: number) => db.deleteDocument(id))
+  ipcMain.handle('documents:regenerateSection', async (_e, documentId: number, sectionName: string, jobId: number) =>
+    regenerateSection(documentId, sectionName, jobId)
+  )
   ipcMain.handle('documents:exportPdf', async (_e, title: string, content: string, docType?: string, company?: string, position?: string) => {
     const win = new BrowserWindow({ show: false, webPreferences: { contextIsolation: true, nodeIntegration: false } })
 

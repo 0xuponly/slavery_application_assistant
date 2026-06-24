@@ -1,6 +1,6 @@
-import { getSettings, listApiModels } from './database'
+import { getSettings, listApiModels, getDocument, updateDocument } from './database'
 import type { ApiModelConfig, Job, TailorRequest, TailorResult } from './types'
-import { createDocument, getJob, updateJob } from './database'
+import { createDocument, getJob } from './database'
 
 export async function tailorDocument(request: TailorRequest): Promise<TailorResult> {
   const settings = getSettings()
@@ -182,4 +182,171 @@ ${settings.user_name || 'Your Name'}`
     choices: { message: { content: string } }[]
   }
   return data.choices[0]?.message?.content ?? ''
+}
+
+const SECTION_HEADERS = new Set([
+  'professional summary', 'summary', 'profile',
+  'core competencies', 'competencies', 'skills', 'qualifications', 'technical skills',
+  'professional experience', 'experience', 'work history', 'work experience',
+  'education',
+  'certifications', 'languages', 'interests', 'skills & interests', 'skills and interests',
+  'projects', 'project experience',
+  'leadership & activities', 'leadership and activities', 'activities', 'leadership',
+  'publications', 'honors & awards', 'honors and awards', 'awards',
+  'additional information', 'additional'
+])
+
+function isSectionHeader(line: string): string | null {
+  const cleaned = line.toLowerCase().trim().replace(/[*_]/g, '')
+  if (SECTION_HEADERS.has(cleaned)) return cleaned
+  if (/^[a-z\s&]+$/.test(cleaned)) {
+    const stripped = cleaned.replace(/[^a-z\s&]/g, '').trim()
+    if (SECTION_HEADERS.has(stripped)) return stripped
+  }
+  return null
+}
+
+const NO_REGENERATE = new Set(['education'])
+const NO_BULLET_SECTIONS = new Set(['skills & interests', 'skills and interests', 'skills', 'interests', 'certifications', 'languages', 'additional information', 'additional'])
+
+interface Section {
+  header: string
+  name: string
+  bodyLines: string[]
+  startIdx: number
+  endIdx: number
+}
+
+function parseSections(content: string): Section[] {
+  const lines = content.split('\n')
+  const sections: Section[] = []
+  let currentHeader: string | null = null
+  let currentName: string | null = null
+  let currentStart = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const name = isSectionHeader(lines[i])
+    if (name) {
+      if (currentName !== null) {
+        sections.push({
+          header: lines[currentStart],
+          name: currentName,
+          bodyLines: lines.slice(currentStart + 1, i),
+          startIdx: currentStart,
+          endIdx: i
+        })
+      }
+      currentHeader = lines[i]
+      currentName = name
+      currentStart = i
+    }
+  }
+
+  if (currentName !== null) {
+    sections.push({
+      header: lines[currentStart],
+      name: currentName,
+      bodyLines: lines.slice(currentStart + 1),
+      startIdx: currentStart,
+      endIdx: lines.length
+    })
+  }
+
+  return sections
+}
+
+export async function regenerateSection(
+  documentId: number,
+  sectionName: string,
+  jobId: number
+): Promise<string> {
+  const settings = getSettings()
+  const job = getJob(jobId)
+  if (!job) throw new Error('Job not found')
+
+  const doc = getDocument(documentId)
+  if (!doc) throw new Error('Document not found')
+
+  const sectionNameLower = sectionName.toLowerCase().trim()
+  if (NO_REGENERATE.has(sectionNameLower)) {
+    throw new Error(`Cannot regenerate the "${sectionName}" section.`)
+  }
+
+  const sections = parseSections(doc.content)
+  const section = sections.find((s) => s.name === sectionNameLower)
+  if (!section) throw new Error(`Section "${sectionName}" not found in the document.`)
+
+  const sectionContent = section.bodyLines.join('\n').trim()
+  if (!sectionContent) throw new Error(`Section "${sectionName}" is empty.`)
+
+  const systemPrompt = `You are an expert career coach regenerating a single section of a Harvard-format CV.
+
+The section header is "${section.header}". Preserve the exact same header — do not output it.
+
+Formatting rules:
+${NO_BULLET_SECTIONS.has(sectionNameLower)
+  ? '- Each line is a label: comma-separated values (no bullets)'
+  : `- Entries use TAB between organization/school name (left) and location (right)
+- Role/Title on next line with TAB between title (left) and dates (right)
+- Bullet points in XYZ format: "Accomplished [X] as measured by [Y], by doing [Z]."
+- Each bullet starts with an action verb`
+}
+
+Rewrite the section content to better match the target job. Keep only relevant entries. Output ONLY the section body — no header line, no markdown.`
+
+  const userPrompt = `Job Title: ${job.title}
+Company: ${job.company}
+Job Description:
+${job.description || 'No description provided.'}
+
+Full CV:
+${doc.content}
+
+Current "${sectionName}" section content:
+${sectionContent}
+
+Rewrite only this section's body.`
+
+  const models = listApiModels()
+  let newBody: string | null = null
+
+  for (const model of models) {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (model.api_key) headers['Authorization'] = `Bearer ${model.api_key}`
+      const abort = new AbortController()
+      const timer = setTimeout(() => abort.abort(), 20000)
+      const response = await fetch(`${model.base_url}/chat/completions`, {
+        method: 'POST',
+        headers,
+        signal: abort.signal,
+        body: JSON.stringify({
+          model: model.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature: 0.7
+        })
+      })
+      clearTimeout(timer)
+      if (response.ok) {
+        const data = (await response.json()) as { choices: { message: { content: string } }[] }
+        newBody = data.choices[0]?.message?.content ?? null
+        if (newBody) break
+      }
+    } catch {
+      // try next model
+    }
+  }
+
+  if (!newBody) throw new Error('All AI models failed. Try again later.')
+
+  const resultLines = [...doc.content.split('\n')]
+  resultLines.splice(section.startIdx + 1, section.endIdx - section.startIdx - 1, ...newBody.trim().split('\n'))
+  const updatedContent = resultLines.join('\n')
+
+  updateDocument(documentId, doc.title, updatedContent)
+
+  return updatedContent
 }

@@ -61,6 +61,7 @@ export interface Api {
   addApiModel: (model: Omit<ApiModelConfig, 'id'>) => Promise<ApiModelConfig[]>
   deleteApiModel: (id: string) => Promise<ApiModelConfig[]>
   tailorDocument: (request: TailorRequest) => Promise<TailorResult>
+  regenerateSection: (documentId: number, sectionName: string, jobId: number) => Promise<string>
   getScanStatus: () => Promise<ScanStatus>
   clearScanResult: () => Promise<void>
   onScanProgress: (cb: (msg: string) => void) => () => void
@@ -115,6 +116,8 @@ const api: Api = {
   addApiModel: (model) => ipcRenderer.invoke('models:add', model),
   deleteApiModel: (id) => ipcRenderer.invoke('models:delete', id),
   tailorDocument: (request) => ipcRenderer.invoke('ai:tailor', request),
+  regenerateSection: (documentId, sectionName, jobId) =>
+    ipcRenderer.invoke('documents:regenerateSection', documentId, sectionName, jobId),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 }
 

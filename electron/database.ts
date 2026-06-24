@@ -242,6 +242,10 @@ export function deleteJob(id: number): void {
 
 // Documents
 
+export function getDocument(id: number): Document | undefined {
+  return loadStore().documents.find((d) => d.id === id)
+}
+
 export function listDocuments(jobId?: number): Document[] {
   const s = loadStore()
   const docs = [...s.documents].sort((a, b) => b.updated_at.localeCompare(a.updated_at))

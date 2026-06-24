@@ -29,6 +29,8 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
   const [docContent, setDocContent] = useState('')
   const [savingDoc, setSavingDoc] = useState(false)
   const [exportingDoc, setExportingDoc] = useState(false)
+  const [regeneratingSection, setRegeneratingSection] = useState<string | null>(null)
+  const [selectedSection, setSelectedSection] = useState('')
 
   useEffect(() => {
     load()
@@ -84,6 +86,42 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
       setViewDoc(updated)
     } finally {
       setSavingDoc(false)
+    }
+  }
+
+  const SECTION_HEADERS = new Set([
+    'professional summary', 'summary', 'profile',
+    'core competencies', 'competencies', 'skills', 'qualifications', 'technical skills',
+    'professional experience', 'experience', 'work history', 'work experience',
+    'education',
+    'certifications', 'languages', 'interests', 'skills & interests', 'skills and interests',
+    'projects', 'project experience',
+    'leadership & activities', 'leadership and activities', 'activities', 'leadership',
+    'publications', 'honors & awards', 'honors and awards', 'awards',
+    'additional information', 'additional'
+  ])
+
+  function findSections(content: string): string[] {
+    const lines = content.split('\n')
+    const sections: string[] = []
+    for (const line of lines) {
+      const cleaned = line.toLowerCase().trim().replace(/[*_]/g, '')
+      if (SECTION_HEADERS.has(cleaned)) sections.push(cleaned)
+    }
+    return sections.filter((s) => s !== 'education')
+  }
+
+  async function handleRegenSection() {
+    if (!viewDoc || !selectedSection || !job) return
+    setRegeneratingSection(selectedSection)
+    try {
+      const updatedContent = await api.regenerateSection(viewDoc.id, selectedSection, job.id)
+      setDocContent(updatedContent)
+      setViewDoc({ ...viewDoc, content: updatedContent })
+    } catch (err) {
+      alert(`Failed to regenerate section: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setRegeneratingSection(null)
     }
   }
 
@@ -338,6 +376,30 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
             Generated {new Date(viewDoc.created_at).toLocaleString()}
             {viewDoc.model_used && ` by ${viewDoc.model_used}`}
+          </div>
+        )}
+        {viewDoc?.type === 'cv' && (
+          <div style={{ marginBottom: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+            <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 6 }}>Regenerate section</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <select
+                value={selectedSection}
+                onChange={(e) => setSelectedSection(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                <option value="">Select section…</option>
+                {findSections(docContent).map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleRegenSection}
+                disabled={!selectedSection || !!regeneratingSection}
+              >
+                {regeneratingSection ? 'Regenerating…' : 'Regenerate'}
+              </button>
+            </div>
           </div>
         )}
         <div className="form-group">

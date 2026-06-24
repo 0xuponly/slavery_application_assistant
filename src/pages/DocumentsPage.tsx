@@ -2,6 +2,28 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Document } from '../types'
 
+const SECTION_HEADERS = new Set([
+  'professional summary', 'summary', 'profile',
+  'core competencies', 'competencies', 'skills', 'qualifications', 'technical skills',
+  'professional experience', 'experience', 'work history', 'work experience',
+  'education',
+  'certifications', 'languages', 'interests', 'skills & interests', 'skills and interests',
+  'projects', 'project experience',
+  'leadership & activities', 'leadership and activities', 'activities', 'leadership',
+  'publications', 'honors & awards', 'honors and awards', 'awards',
+  'additional information', 'additional'
+])
+
+function findSections(content: string): string[] {
+  const lines = content.split('\n')
+  const sections: string[] = []
+  for (const line of lines) {
+    const cleaned = line.toLowerCase().trim().replace(/[*_]/g, '')
+    if (SECTION_HEADERS.has(cleaned)) sections.push(cleaned)
+  }
+  return sections.filter((s) => s !== 'education')
+}
+
 export default function DocumentsPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [selected, setSelected] = useState<Document | null>(null)
@@ -9,6 +31,8 @@ export default function DocumentsPage() {
   const [editContent, setEditContent] = useState('')
   const [saving, setSaving] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [selectedSection, setSelectedSection] = useState('')
+  const [regeneratingSection, setRegeneratingSection] = useState<string | null>(null)
 
   useEffect(() => {
     load()
@@ -37,6 +61,20 @@ export default function DocumentsPage() {
       setSelected(updated)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleRegenSection() {
+    if (!selected || !selectedSection || !selected.job_id) return
+    setRegeneratingSection(selectedSection)
+    try {
+      const updatedContent = await api.regenerateSection(selected.id, selectedSection, selected.job_id)
+      setEditContent(updatedContent)
+      setSelected({ ...selected, content: updatedContent })
+    } catch (err) {
+      alert(`Failed to regenerate section: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    } finally {
+      setRegeneratingSection(null)
     }
   }
 
@@ -115,6 +153,27 @@ export default function DocumentsPage() {
                 Generated {new Date(selected.created_at).toLocaleString()}
                 {selected.model_used && ` by ${selected.model_used}`}
               </div>
+              {selected?.type === 'cv' && selected.job_id && (
+                <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    value={selectedSection}
+                    onChange={(e) => setSelectedSection(e.target.value)}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">Regenerate section…</option>
+                    {findSections(editContent).map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={handleRegenSection}
+                    disabled={!selectedSection || !!regeneratingSection}
+                  >
+                    {regeneratingSection ? 'Regenerating…' : 'Regenerate'}
+                  </button>
+                </div>
+              )}
               <textarea
                 value={editContent}
                 onChange={(e) => setEditContent(e.target.value)}
