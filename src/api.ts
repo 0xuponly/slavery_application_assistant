@@ -64,6 +64,8 @@ export interface Api {
   getScanStatus: () => Promise<ScanStatus>
   clearScanResult: () => Promise<void>
   onScanProgress: (cb: (msg: string) => void) => () => void
+  clearSeenUrls: () => Promise<void>
+  clearAllData: () => Promise<void>
   openExternal: (url: string) => Promise<void>
 }
 

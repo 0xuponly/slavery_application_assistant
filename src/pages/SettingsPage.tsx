@@ -198,6 +198,42 @@ export default function SettingsPage() {
           {saving ? 'Saving...' : saved ? 'Saved!' : 'Save settings'}
         </button>
       </div>
+
+      <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '32px 0' }} />
+
+      <div className="section-title" style={{ color: 'var(--danger)' }}>Danger zone</div>
+
+      <div className="card" style={{ maxWidth: 600, marginBottom: 12 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+          Clears the scan memory so previously seen job URLs will be re-scraped on the next scan. All existing jobs, documents, applications, follow-ups, and interviews are preserved.
+        </p>
+        <button
+          className="btn btn-danger"
+          onClick={async () => {
+            if (!window.confirm('Clear scan memory? URLs already in your job board will be re-scraped next time you scan.')) return
+            await api.clearSeenUrls()
+          }}
+        >
+          Delete scan memory
+        </button>
+      </div>
+
+      <div className="card" style={{ maxWidth: 600 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+          This will permanently delete all jobs, documents, applications, follow-ups, and interviews. Your settings and AI model configs will be preserved.
+        </p>
+        <button
+          className="btn btn-danger"
+          onClick={async () => {
+            if (!window.confirm('Are you sure? This will delete ALL jobs, documents, applications, follow-ups, and interviews. This cannot be undone.')) return
+            if (!window.confirm('Really? There is no undo. All your job data will be gone.')) return
+            await api.clearAllData()
+            window.location.reload()
+          }}
+        >
+          Clear all data
+        </button>
+      </div>
     </div>
   )
 }

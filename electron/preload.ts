@@ -65,6 +65,8 @@ export interface Api {
   getScanStatus: () => Promise<ScanStatus>
   clearScanResult: () => Promise<void>
   onScanProgress: (cb: (msg: string) => void) => () => void
+  clearSeenUrls: () => Promise<void>
+  clearAllData: () => Promise<void>
   openExternal: (url: string) => Promise<void>
 }
 
@@ -118,6 +120,8 @@ const api: Api = {
   tailorDocument: (request) => ipcRenderer.invoke('ai:tailor', request),
   regenerateSection: (documentId, sectionName, jobId) =>
     ipcRenderer.invoke('documents:regenerateSection', documentId, sectionName, jobId),
+  clearSeenUrls: () => ipcRenderer.invoke('db:clearSeenUrls'),
+  clearAllData: () => ipcRenderer.invoke('db:clearAllData'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 }
 

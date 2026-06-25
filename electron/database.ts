@@ -658,3 +658,21 @@ export function searchJobs(query: string): Job[] {
       (j.location?.toLowerCase().includes(q) ?? false)
   )
 }
+
+export function clearSeenUrls(): void {
+  const s = loadStore()
+  s.seen_urls = []
+  persistStore()
+}
+
+export function clearAllData(): void {
+  const s = loadStore()
+  s.jobs = []
+  s.documents = []
+  s.applications = []
+  s.follow_ups = []
+  s.interviews = []
+  s.seen_urls = []
+  s.nextId = 1
+  persistStore()
+}

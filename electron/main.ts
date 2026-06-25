@@ -345,6 +345,9 @@ ${htmlBody}
 
   ipcMain.handle('ai:tailor', async (_e, request: TailorRequest) => tailorDocument(request))
 
+  ipcMain.handle('db:clearSeenUrls', () => db.clearSeenUrls())
+  ipcMain.handle('db:clearAllData', () => db.clearAllData())
+
   ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
 }
 
