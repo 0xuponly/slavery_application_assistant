@@ -11,6 +11,11 @@ interface ScrapedJob {
   description?: string
   salary_range?: string
   source?: string
+  requirements?: string
+  application_requirements?: string
+  hiring_manager?: string
+  employment_type?: string
+  work_mode?: string
 }
 
 export async function scrapeJobFromUrl(rawUrl: string): Promise<CreateJobInput> {
@@ -39,7 +44,12 @@ export async function scrapeJobFromUrl(rawUrl: string): Promise<CreateJobInput> 
     url,
     description: cleanDescription(scraped.description!),
     salary_range: scraped.salary_range,
-    source: scraped.source
+    source: scraped.source,
+    requirements: scraped.requirements,
+    application_requirements: scraped.application_requirements,
+    hiring_manager: scraped.hiring_manager,
+    employment_type: scraped.employment_type,
+    work_mode: scraped.work_mode
   }
 }
 
@@ -181,6 +191,42 @@ function extractFromHtml(html: string, hostname: string, pageUrl: string, source
   } else if (hostname.includes('jobs.vancouver.ca')) {
     applyVancouverJobs(result, html)
     result.source = 'Vancouver Jobs'
+  } else if (hostname.includes('monster.com')) {
+    applyMonster(result, html)
+    result.source = 'Monster'
+  } else if (hostname.includes('ziprecruiter.com')) {
+    applyZipRecruiter(result, html)
+    result.source = 'ZipRecruiter'
+  } else if (hostname.includes('remoteok.com')) {
+    applyRemoteOk(result, html)
+    result.source = 'Remote OK'
+  } else if (hostname.includes('weworkremotely.com')) {
+    applyWeWorkRemotely(result, html)
+    result.source = 'We Work Remotely'
+  } else if (hostname.includes('remotive.com')) {
+    applyRemotive(result, html)
+    result.source = 'Remotive'
+  } else if (hostname.includes('simplyhired.com')) {
+    applySimplyHired(result, html)
+    result.source = 'SimplyHired'
+  } else if (hostname.includes('adzuna.com')) {
+    applyAdzuna(result, html)
+    result.source = 'Adzuna'
+  } else if (hostname.includes('talent.com')) {
+    applyTalentCom(result, html)
+    result.source = 'Talent.com'
+  } else if (hostname.includes('jora.com')) {
+    applyJora(result, html)
+    result.source = 'Jora'
+  } else if (hostname.includes('startup.jobs')) {
+    applyStartupJobs(result, html)
+    result.source = 'Startup.jobs'
+  } else if (hostname.includes('builtin.com')) {
+    applyBuiltIn(result, html)
+    result.source = 'Built In'
+  } else if (hostname.includes('idealist.org')) {
+    applyIdealist(result, html)
+    result.source = 'Idealist'
   } else if (source) {
     result.source = source
   }
@@ -189,6 +235,9 @@ function extractFromHtml(html: string, hostname: string, pageUrl: string, source
   if (!result.title || !result.company || !result.description) {
     applyGeneric(result, html, pageUrl)
   }
+
+  // Always run post-processing to extract salary + metadata from raw HTML
+  extractSalaryAndMetadata(result, html)
 
   if (result.title) {
     result.title = cleanTitle(result.title, result.company, result.source)
@@ -312,6 +361,31 @@ function applyJobPosting(result: ScrapedJob, jp: any): void {
     const name = typeof loc === 'string' ? loc : loc.name
     if (name) result.location = String(name).trim()
   }
+
+  if (jp.employmentType && !result.employment_type) {
+    const et = jp.employmentType
+    result.employment_type = (Array.isArray(et) ? et[0] : et)
+  }
+
+  if (jp.jobLocationType && !result.work_mode) {
+    const jlt = jp.jobLocationType
+    const str = Array.isArray(jlt) ? jlt[0] : jlt
+    if (typeof str === 'string') {
+      if (/telecommute|remote|virtual/i.test(str)) result.work_mode = 'Remote'
+      else if (/flexible|hybrid/i.test(str)) result.work_mode = 'Hybrid'
+      else if (/onsite|on.?site/i.test(str)) result.work_mode = 'On-site'
+      else result.work_mode = str
+    }
+  }
+
+  if (jp.qualifications && !result.requirements) {
+    const q = jp.qualifications
+    result.requirements = typeof q === 'string' ? stripHtml(q).trim() : undefined
+  }
+
+  if (jp.hiringManager?.name && !result.hiring_manager) {
+    result.hiring_manager = jp.hiringManager.name
+  }
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -359,6 +433,17 @@ function applyLinkedIn(result: ScrapedJob, html: string): void {
   if (descMatch) {
     const desc = stripHtml(unescapeJson(descMatch[1])).trim()
     if (desc) result.description = desc
+  }
+
+  const salaryMatch = html.match(/"salary"[\s\S]*?"text"\s*:\s*"([^"]+)"/i) || html.match(/compensation[\s\S]*?"text"\s*:\s*"([^"]+)"/i)
+  if (salaryMatch && !result.salary_range) result.salary_range = unescapeJson(salaryMatch[1]).trim()
+
+  const workModeMatch = html.match(/"workplaceTypes"\s*:\s*\["([^"]+)"/i)
+  if (workModeMatch && !result.work_mode) {
+    const wt = workModeMatch[1]
+    if (/on[_-]site/i.test(wt)) result.work_mode = 'On-site'
+    else if (/hybrid/i.test(wt)) result.work_mode = 'Hybrid'
+    else if (/remote/i.test(wt)) result.work_mode = 'Remote'
   }
 
   const ogTitle = extractMeta(html, 'og:title')
@@ -595,6 +680,247 @@ function applyVancouverJobs(result: ScrapedJob, html: string): void {
     const regionMatch = html.match(/itemprop=["']addressRegion["'][^>]*content=["']([^"']+)["']/i)
     if (cityMatch) result.location = decodeHtmlEntities(cityMatch[1].trim())
     if (regionMatch && result.location) result.location += ', ' + decodeHtmlEntities(regionMatch[1].trim())
+  }
+}
+
+function applyMonster(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/data-test="jobTitle"[^>]*>([^<]+)/i) || html.match(/<h1[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)</i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/data-test="company"[^>]*>([^<]+)/i) || html.match(/itemprop="hiringOrganization"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/data-test="location"[^>]*>([^<]+)/i) || html.match(/itemprop="jobLocation"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/data-test="salary"[^>]*>([^<]+)/i)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  const descMatch = html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyZipRecruiter(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/data-testid="jobTitle"[^>]*>([^<]+)/i) || html.match(/<h1[^>]*class="[^"]*job_title[^"]*"[^>]*>([^<]+)<\/h1>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/data-testid="companyLink"[^>]*>([^<]+)/i) || html.match(/class="[^"]*company_name[^"]*"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/data-testid="jobLocation"[^>]*>([^<]+)/i) || html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/class="[^"]*salary[^"]*"[^>]*>([^<]+)/i) || html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  const descMatch = html.match(/<div[^>]*data-testid="jobDescription"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<section[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/section>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyRemoteOk(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*class="[^"]*font-weight-bold[^"]*"[^>]*>([^<]+)<\/h1>/i) || html.match(/<h2[^>]*>([^<]+)<\/h2>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/<p[^>]*class="[^"]*text-detail[^"]*"[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/i) || html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const salaryMatch = html.match(/class="[^"]*salary-range[^"]*"[^>]*>([^<]+)/i) || html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  result.location = 'Remote'
+  const descMatch = html.match(/<div[^>]*class="[^"]*prose[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyWeWorkRemotely(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/class="company"[^>]*>([^<]+)/i) || html.match(/<a[^>]*class="[^"]*company[^"]*"[^>]*>([^<]+)<\/a>/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const salaryMatch = html.match(/class="[^"]*range[^"]*"[^>]*>([^<]+)/i) || html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  result.location = 'Remote'
+  const descMatch = html.match(/<div[^>]*class="[^"]*listing-card[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<div[^>]*class="[^"]*content[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyRemotive(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)/i) || html.match(/<span[^>]*class="[^"]*company_name[^"]*"[^>]*>([^<]+)<\/span>/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const salaryMatch = html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)(?:\s*(?:per|a|an|\/)\s*(year|yr|month|hour|hr))?/i)
+  if (salaryMatch && !result.salary_range) result.salary_range = salaryMatch[0].trim()
+  result.location = 'Remote'
+  const descMatch = html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<article[^>]*>([\s\S]*?)<\/article>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applySimplyHired(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/data-testid="jobTitle"[^>]*>([^<]+)/i) || html.match(/<h2[^>]*class="[^"]*job-title[^"]*"[^>]*>([^<]+)</i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/data-testid="jobCompany"[^>]*>([^<]+)/i) || html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)</i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/data-testid="jobLocation"[^>]*>([^<]+)/i) || html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)</i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/class="[^"]*salary[^"]*"[^>]*>([^<]+)/i) || html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  const descMatch = html.match(/<div[^>]*data-testid="jobDescription"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyAdzuna(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*class="[^"]*job-title[^"]*"[^>]*>([^<]+)<\/h1>/i) || html.match(/data-adzuna="title"[^>]*>([^<]+)/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/data-adzuna="company"[^>]*>([^<]+)/i) || html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/data-adzuna="location"[^>]*>([^<]+)/i) || html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/data-adzuna="salary"[^>]*>([^<]+)/i) || html.match(/class="[^"]*salary[^"]*"[^>]*>([^<]+)/i)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  const descMatch = html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyTalentCom(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || html.match(/data-test="job-title"[^>]*>([^<]+)/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/data-test="company-name"[^>]*>([^<]+)/i) || html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/data-test="location"[^>]*>([^<]+)/i) || html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/data-test="salary"[^>]*>([^<]+)/i) || html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = decodeHtmlEntities(salaryMatch[1].trim())
+  const descMatch = html.match(/<div[^>]*data-test="description"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyJora(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)/i) || html.match(/class="[^"]*employer[^"]*"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)(?:\s*(?:per|a|an|\/)\s*(year|yr|month|hour|hr))?/i)
+  if (salaryMatch && !result.salary_range) result.salary_range = salaryMatch[0].trim()
+  const descMatch = html.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyStartupJobs(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/class="[^"]*company[^"]*"[^>]*>([^<]+)/i) || html.match(/<a[^>]*class="[^"]*company_name[^"]*"[^>]*>([^<]+)<\/a>/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)(?:\s*(?:per|a|an|\/)\s*(year|yr|month|hour|hr))?/i)
+  if (salaryMatch && !result.salary_range) result.salary_range = salaryMatch[0].trim()
+  const descMatch = html.match(/<div[^>]*class="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyBuiltIn(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i) || html.match(/class="[^"]*job-title[^"]*"[^>]*>([^<]+)/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/class="[^"]*company-name[^"]*"[^>]*>([^<]+)/i) || html.match(/itemprop="name"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = salaryMatch[0].trim()
+  const descMatch = html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function applyIdealist(result: ScrapedJob, html: string): void {
+  const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/i)
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim())
+  const companyMatch = html.match(/class="[^"]*org-name[^"]*"[^>]*>([^<]+)/i) || html.match(/class="[^"]*organization[^"]*"[^>]*>([^<]+)/i)
+  if (companyMatch) result.company = decodeHtmlEntities(companyMatch[1].trim())
+  const locMatch = html.match(/class="[^"]*location[^"]*"[^>]*>([^<]+)/i)
+  if (locMatch) result.location = decodeHtmlEntities(locMatch[1].trim())
+  const salaryMatch = html.match(/\$([\d,]+(?:k|K)?)\s*(?:–|-|to)\s*\$?([\d,]+(?:k|K)?)/)
+  if (salaryMatch && !result.salary_range) result.salary_range = salaryMatch[0].trim()
+  const descMatch = html.match(/<div[^>]*class="[^"]*job-description[^"]*"[^>]*>([\s\S]*?)<\/div>/i) || html.match(/<div[^>]*id="[^"]*description[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+  if (descMatch) {
+    const desc = stripHtml(descMatch[1]).trim()
+    if (desc) result.description = desc
+  }
+}
+
+function extractSalaryFromText(text: string): string | undefined {
+  const patterns = [
+    /(?:salary|pay|compensation|range)\s*[:\s]*([$€£¥][\d,]+(?:\.\d+)?(?:k|K)?(?:\s*(?:–|-|to)\s*[$€£¥]?[\d,]+(?:\.\d+)?(?:k|K)?)?(?:\s*(?:per|a|an|\/)\s*(?:year|yr|month|hour|hr|week|wk|day))?)/i,
+    /([$€£¥][\d,]+(?:\.\d+)?(?:k|K)?\s*(?:–|-|to)\s*[$€£¥]?[\d,]+(?:\.\d+)?(?:k|K)?(?:\s*(?:per|a|an|\/)\s*(?:year|yr|month|hour|hr|week|wk|day))?)/,
+    /(USD|CAD|EUR|GBP|AUD|NZD)\s*([\d,]+(?:k|K)?(?:\s*(?:–|-|to)\s*[\d,]+(?:k|K)?)(?:\s*(?:per|a|an|\/)\s*(?:year|yr|month|hour|hr|week|wk|day))?)/i
+  ]
+  for (const p of patterns) {
+    const m = text.match(p)
+    if (m) return decodeHtmlEntities(m[1] || m[0]).trim()
+  }
+  return undefined
+}
+
+function extractEmploymentTypeFromText(text: string): string | undefined {
+  const m = text.match(/(?:employment|job)\s*(?:type|status|category)\s*[:\s]+(full[- ]time|part[- ]time|contract|temporary|permanent|internship|freelance)/i)
+  if (m) return m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase().replace(/[- ]/g, '-')
+  const m2 = text.match(/(?:type|status|category)\s*[:\s]+(full[- ]time|part[- ]time|contract|temporary|permanent|internship|freelance)/i)
+  if (m2) return m2[1].charAt(0).toUpperCase() + m2[1].slice(1).toLowerCase().replace(/[- ]/g, '-')
+  return undefined
+}
+
+function extractWorkModeFromText(text: string): string | undefined {
+  const patterns = [
+    /(?:work|job|employment|workplace|position)\s*(?:mode|type|setting|arrangement|status|option)\s*[:\s]+(remote|hybrid|on[- ]site|in[- ]office|on site)/i,
+    /(remote|hybrid|on[- ]site|in[- ]office|on site)\s*(?:work|job|position|role|employment|arrangement|setting)/i,
+    /workplace\s*[:\s]+(remote|hybrid|on[- ]site|in[- ]office)/i,
+  ]
+  for (const p of patterns) {
+    const m = text.match(p)
+    if (m) {
+      const val = m[1].toLowerCase().replace(/[- ]/g, '-')
+      if (val.startsWith('remote')) return 'Remote'
+      if (val.startsWith('hybrid')) return 'Hybrid'
+      if (/on.?site|in.?office/.test(val)) return 'On-site'
+      return val.charAt(0).toUpperCase() + val.slice(1)
+    }
+  }
+  return undefined
+}
+
+function extractSalaryAndMetadata(result: ScrapedJob, html: string): void {
+  if (!result.salary_range) {
+    result.salary_range = extractSalaryFromText(html)
+  }
+  if (!result.employment_type) {
+    result.employment_type = extractEmploymentTypeFromText(html)
+  }
+  if (!result.work_mode) {
+    result.work_mode = extractWorkModeFromText(html)
   }
 }
 
