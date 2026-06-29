@@ -54,8 +54,15 @@ FORMATTING RULES (must follow exactly):
 - Do NOT use asterisks or markdown formatting
 - Do NOT use personal pronouns
 - Quantify wherever possible
-- Keep factual accuracy — only reorganize and emphasize relevant experience
-- Output plain text only`
+- Output plain text only
+
+CRITICAL — TRUTHFULNESS (this overrides everything else):
+- Use ONLY experience, skills, education, and projects that appear in the candidate's Base CV / Background below.
+- Do NOT invent or fabricate any experience, employers, job titles, projects, technologies, degrees, courses, GPA, awards, dates, or numbers that are not in the Base CV.
+- Do NOT hallucinate metrics ("increased revenue by 40%") unless that specific number is in the Base CV. If the Base CV has no metric, use a non-numeric but truthful phrasing (e.g. "Improved onboarding workflow for new hires").
+- Do NOT add skills, tools, languages, or technologies the candidate did not list.
+- You MAY reword, reframe, reorder, and tighten existing experience to highlight what is most relevant to the target job. The candidate's actual accomplishments stay — they just sound as strong and as role-aligned as possible.
+- If the Base CV is sparse, the output should be sparse. Do not pad with generic filler.`
 }
 
 interface CallAIResult {
@@ -150,7 +157,9 @@ export async function tailorDocument(request: TailorRequest): Promise<TailorResu
     request.document_type === 'cv'
       ? buildHarvardCvInstructions(await loadHarvardTemplate())
       : `You are an expert career coach. Write a compelling, personalized cover letter for this job.
-Keep it concise (3-4 paragraphs), professional, and specific to the role. Output plain text only.`
+Keep it concise (3-4 paragraphs), professional, and specific to the role. Output plain text only.
+
+CRITICAL — TRUTHFULNESS: reference ONLY the candidate's actual experience, skills, and projects from the Base CV / Background below. Do NOT fabricate employers, job titles, technologies, achievements, or metrics. You may reword and reframe the candidate's real experience to align with the role, but you must not invent anything that is not in the Base CV.`
 
   const userPrompt = `Job Title: ${job.title}
 Company: ${job.company}
@@ -433,6 +442,14 @@ ${NO_BULLET_SECTIONS.has(sectionNameLower)
 - Each bullet starts with an action verb
 - Do NOT use personal pronouns; each bullet is a phrase, not a full sentence`
 }
+
+CRITICAL — TRUTHFULNESS (this overrides everything else):
+- Use ONLY experience, skills, education, and projects that appear in the Full CV below.
+- Do NOT invent or fabricate any experience, employers, job titles, projects, technologies, degrees, courses, GPA, awards, dates, or numbers that are not in the Full CV.
+- Do NOT hallucinate metrics ("increased revenue by 40%") unless that specific number is in the Full CV. If no metric exists, use a non-numeric but truthful phrasing.
+- Do NOT add skills, tools, languages, or technologies the candidate did not list.
+- You MAY reword, reframe, reorder, and tighten existing entries to highlight what is most relevant to the target job. The candidate's actual accomplishments stay — they just sound as strong and as role-aligned as possible.
+- If the section content is sparse, the output should be sparse. Do not pad with generic filler.
 
 Rewrite the section content to better match the target job. Keep only relevant entries. Output ONLY the section body — no header line, no markdown.`
 
