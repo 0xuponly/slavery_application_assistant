@@ -64,9 +64,14 @@ export default function SettingsPage() {
 
   return (
     <div className="page">
-      <div className="page-header">
-        <h1>Settings</h1>
-        <p>Configure your profile and AI integration</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1>Settings</h1>
+          <p>Configure your profile and AI integration</p>
+        </div>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save settings'}
+        </button>
       </div>
 
       <div className="section-title">Your profile</div>
@@ -210,12 +215,6 @@ export default function SettingsPage() {
             />
           </div>
         </div>
-      </div>
-
-      <div style={{ marginTop: 20 }}>
-        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save settings'}
-        </button>
       </div>
 
       <hr style={{ border: 'none', borderTop: '1px solid var(--border)', margin: '32px 0' }} />
