@@ -1,12 +1,61 @@
 import { getSettings, listApiModels, getDocument, updateDocument, updateDocumentVerification } from './database'
 import type { ApiModelConfig, Job, TailorRequest, TailorResult, VerificationResult } from './types'
 import { createDocument, getJob } from './database'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { app } from 'electron'
+import mammoth from 'mammoth'
 
 export class RateLimitError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'RateLimitError'
   }
+}
+
+let cachedTemplate: string | null = null
+
+async function loadHarvardTemplate(): Promise<string> {
+  if (cachedTemplate !== null) return cachedTemplate
+  try {
+    const path = join(app.getAppPath(), '2025-template_bullet.docx')
+    const buf = readFileSync(path)
+    const result = await mammoth.extractRawText({ buffer: new Uint8Array(buf) })
+    cachedTemplate = result.value.trim()
+  } catch (err) {
+    console.error('[ai] Failed to load Harvard template:', err)
+    cachedTemplate = ''
+  }
+  return cachedTemplate
+}
+
+function buildHarvardCvInstructions(template: string): string {
+  return `You are an expert career coach. Tailor the candidate's CV for the specific job posting using the EXACT Harvard format demonstrated by the template below. The template is the source of truth — preserve its structure, section order, spacing, capitalization, and TAB-based alignment exactly as shown.
+
+=== HARVARD CV TEMPLATE (source of truth) ===
+${template}
+=== END TEMPLATE ===
+
+SECTIONS IN ORDER (do not add, remove, or rename any section):
+1. Name (centered, on its own line)
+2. Contact line: address • city, state zip • email • phone (centered, bullets between fields)
+3. Education — School Name (TAB) Location, Degree, Concentration, GPA (TAB) Graduation Date, Thesis
+   Then: Relevant Coursework, Study Abroad, High School (same TAB-aligned format)
+4. Experience — Organization (TAB) City, State, then Position Title (TAB) Month Year – Month Year
+   Then: bullet points describing the role (no personal pronouns, action-verb-led, quantified)
+5. Leadership & Activities — same format as Experience
+6. Skills & Interests — Technical: / Language: / Laboratory: / Interests: (label: comma-separated values, no bullets)
+
+FORMATTING RULES (must follow exactly):
+- Section headers on their own line, centered, bold
+- Use a TAB character between bold left text (school/org/title) and right-aligned location/dates
+- Each bullet point on its own line, starting with an action verb
+- Write experience bullet points in the XYZ format: "Accomplished [X] as measured by [Y], by doing [Z]."
+- Do NOT use asterisks or markdown formatting
+- Do NOT use personal pronouns
+- Quantify wherever possible
+- Keep factual accuracy — only reorganize and emphasize relevant experience
+- Output plain text only`
 }
 
 interface CallAIResult {
@@ -99,24 +148,7 @@ export async function tailorDocument(request: TailorRequest): Promise<TailorResu
 
   const systemPrompt =
     request.document_type === 'cv'
-      ? `You are an expert career coach. Tailor the candidate's CV for the specific job posting using the EXACT Harvard template format below.
-
-SECTIONS IN ORDER:
-1. Contact Info — name, email, phone, address
-2. Education — School name (tab) Location, Degree (tab) Dates, Relevant Coursework, Study Abroad, High School
-3. Experience — Organization (tab) Location, Position Title (tab) Dates, then bullet points
-4. Leadership & Activities — Organization (tab) Location, Role (tab) Dates, then bullet points
-5. Skills & Interests — Technical:, Language:, Laboratory:, Interests:
-
-FORMATTING RULES:
-- Section headers on their own line, centered, bold
-- Use a TAB character between bold left text (school/org/title) and right-aligned location/dates
-- Each bullet point on its own line, starting with an action verb
-- Write experience bullet points in the XYZ format:
-  "Accomplished [X] as measured by [Y], by doing [Z]."
-- Do NOT use asterisks or markdown formatting
-- Keep factual accuracy — only reorganize and emphasize relevant experience
-- Output plain text only`
+      ? buildHarvardCvInstructions(await loadHarvardTemplate())
       : `You are an expert career coach. Write a compelling, personalized cover letter for this job.
 Keep it concise (3-4 paragraphs), professional, and specific to the role. Output plain text only.`
 
@@ -388,13 +420,18 @@ export async function regenerateSection(
 
 The section header is "${section.header}". Preserve the exact same header — do not output it.
 
+=== HARVARD CV TEMPLATE (source of truth) ===
+${await loadHarvardTemplate()}
+=== END TEMPLATE ===
+
 Formatting rules:
 ${NO_BULLET_SECTIONS.has(sectionNameLower)
   ? '- Each line is a label: comma-separated values (no bullets)'
   : `- Entries use TAB between organization/school name (left) and location (right)
 - Role/Title on next line with TAB between title (left) and dates (right)
 - Bullet points in XYZ format: "Accomplished [X] as measured by [Y], by doing [Z]."
-- Each bullet starts with an action verb`
+- Each bullet starts with an action verb
+- Do NOT use personal pronouns; each bullet is a phrase, not a full sentence`
 }
 
 Rewrite the section content to better match the target job. Keep only relevant entries. Output ONLY the section body — no header line, no markdown.`

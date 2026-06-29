@@ -552,7 +552,7 @@ export default function JobsPage() {
         )}
 
         <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>
-          Supported boards include CryptoJobsList, cryptojobs.com, Crypto.jobs, Web3.career, and others. If details can't be sourced, you'll see an error and no job will be added.{' '}
+          Supported boards: LinkedIn, Indeed, Indeed Canada, Monster, ZipRecruiter, SimplyHired, Adzuna, Talent.com, Jora, Remote OK, We Work Remotely, Remotive, Remote.co, Working Nomads, JustRemote, Job Bank (GC), Eluta.ca, Workopolis, Jobboom, WorkBC, CareerBeacon, CharityVillage, Crypto Careers, Cryptorecruit, Remote3, Cryptocurrency Jobs, CryptoJobsList, cryptojobs.com, Crypto.jobs, Web3.career, Startup.jobs, Selby Jennings, Idealist, Built In, Vancouver Jobs, Built In Toronto, Wellfound, UToronto, Y Combinator, CVCA, Top Startups, Rocketships. If details can't be sourced, you'll see an error and no job will be added.{' '}
           <button
             type="button"
             className="btn btn-secondary btn-sm"
