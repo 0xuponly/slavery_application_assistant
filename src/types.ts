@@ -188,6 +188,23 @@ export interface ScanStatus {
   startedAt: number | null
 }
 
+export type AIQueueItemType = 'generate_cv' | 'generate_cover_letter' | 'regenerate_section' | 'verify'
+export type AIQueueItemStatus = 'pending' | 'processing' | 'failed'
+
+export interface AIQueueItem {
+  id: number
+  type: AIQueueItemType
+  jobId: number
+  documentId?: number
+  sectionName?: string
+  extraContext?: string
+  status: AIQueueItemStatus
+  attempts: number
+  lastError?: string
+  createdAt: number
+  nextRetryAt: number
+}
+
 export const STATUS_COLORS: Record<JobStatus, string> = {
   sourced: '#6366f1',
   reviewing: '#8b5cf6',

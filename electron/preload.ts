@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  AIQueueItem,
   ApiModelConfig,
   Application,
   CreateJobInput,
@@ -62,14 +63,17 @@ export interface Api {
   saveApiModels: (models: ApiModelConfig[]) => Promise<ApiModelConfig[]>
   addApiModel: (model: Omit<ApiModelConfig, 'id'>) => Promise<ApiModelConfig[]>
   deleteApiModel: (id: string) => Promise<ApiModelConfig[]>
-  tailorDocument: (request: TailorRequest) => Promise<TailorResult>
-  verifyDocument: (jobId: number, documentId: number, docType: 'cv' | 'cover_letter') => Promise<VerificationResult>
-  regenerateSection: (documentId: number, sectionName: string, jobId: number) => Promise<string>
+  tailorDocument: (request: TailorRequest) => Promise<TailorResult | { queued: true }>
+  verifyDocument: (jobId: number, documentId: number, docType: 'cv' | 'cover_letter') => Promise<VerificationResult | { queued: true }>
+  regenerateSection: (documentId: number, sectionName: string, jobId: number, extraContext?: string) => Promise<string | { queued: true }>
   getScanStatus: () => Promise<ScanStatus>
   clearScanResult: () => Promise<void>
   onScanProgress: (cb: (msg: string) => void) => () => void
   clearSeenUrls: () => Promise<void>
   clearAllData: () => Promise<void>
+  listAIQueue: () => Promise<AIQueueItem[]>
+  retryAIQueueItem: (id: number) => Promise<AIQueueItem[]>
+  removeAIQueueItem: (id: number) => Promise<AIQueueItem[]>
   openExternal: (url: string) => Promise<void>
 }
 
@@ -123,10 +127,13 @@ const api: Api = {
   deleteApiModel: (id) => ipcRenderer.invoke('models:delete', id),
   tailorDocument: (request) => ipcRenderer.invoke('ai:tailor', request),
   verifyDocument: (jobId, documentId, docType) => ipcRenderer.invoke('documents:verify', jobId, documentId, docType),
-  regenerateSection: (documentId, sectionName, jobId) =>
-    ipcRenderer.invoke('documents:regenerateSection', documentId, sectionName, jobId),
+  regenerateSection: (documentId, sectionName, jobId, extraContext) =>
+    ipcRenderer.invoke('documents:regenerateSection', documentId, sectionName, jobId, extraContext),
   clearSeenUrls: () => ipcRenderer.invoke('db:clearSeenUrls'),
   clearAllData: () => ipcRenderer.invoke('db:clearAllData'),
+  listAIQueue: () => ipcRenderer.invoke('aiQueue:list'),
+  retryAIQueueItem: (id) => ipcRenderer.invoke('aiQueue:retry', id),
+  removeAIQueueItem: (id) => ipcRenderer.invoke('aiQueue:remove', id),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 }
 

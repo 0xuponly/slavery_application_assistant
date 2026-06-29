@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import Modal from '../components/Modal'
+import { notify } from '../components/Notifications'
 import type { Application, Document, Job } from '../types'
 import { STATUS_COLORS, STATUS_LABELS } from '../types'
 
@@ -37,6 +38,7 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
   const [exportingDoc, setExportingDoc] = useState(false)
   const [regeneratingSection, setRegeneratingSection] = useState<string | null>(null)
   const [selectedSection, setSelectedSection] = useState('')
+  const [regenContext, setRegenContext] = useState('')
 
   useEffect(() => {
     load()
@@ -222,7 +224,12 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
     if (!viewDoc || !selectedSection || !job) return
     setRegeneratingSection(selectedSection)
     try {
-      const updatedContent = await api.regenerateSection(viewDoc.id, selectedSection, job.id)
+      const result = await api.regenerateSection(viewDoc.id, selectedSection, job.id, regenContext.trim() || undefined)
+      if (result && typeof result === 'object' && 'queued' in result) {
+        notify('Request rate-limited — added to queue. Will retry automatically.', 'info')
+        return
+      }
+      const updatedContent = result as string
       setDocContent(updatedContent)
       setViewDoc({ ...viewDoc, content: updatedContent })
     } catch (err) {
@@ -579,7 +586,7 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
         {viewDoc?.type === 'cv' && (
           <div style={{ marginBottom: 12, padding: 12, background: 'var(--bg-secondary)', borderRadius: 8 }}>
             <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 6 }}>Regenerate section</label>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <select
                 value={selectedSection}
                 onChange={(e) => setSelectedSection(e.target.value)}
@@ -598,6 +605,13 @@ export default function JobDetail({ job, onBack, onUpdate }: Props) {
                 {regeneratingSection ? 'Regenerating…' : 'Regenerate'}
               </button>
             </div>
+            <textarea
+              rows={2}
+              value={regenContext}
+              onChange={(e) => setRegenContext(e.target.value)}
+              placeholder="Add context/instructions for regeneration (optional)…"
+              style={{ width: '100%', fontSize: 12, resize: 'vertical' }}
+            />
           </div>
         )}
         <div className="form-group">

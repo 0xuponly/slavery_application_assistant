@@ -1,5 +1,6 @@
 import type {
   ApiModelConfig,
+  AIQueueItem,
   Application,
   CreateJobInput,
   DashboardStats,
@@ -61,15 +62,18 @@ export interface Api {
   saveApiModels: (models: ApiModelConfig[]) => Promise<ApiModelConfig[]>
   addApiModel: (model: Omit<ApiModelConfig, 'id'>) => Promise<ApiModelConfig[]>
   deleteApiModel: (id: string) => Promise<ApiModelConfig[]>
-  tailorDocument: (request: TailorRequest) => Promise<TailorResult>
-  verifyDocument: (jobId: number, documentId: number, docType: 'cv' | 'cover_letter') => Promise<VerificationResult>
-  regenerateSection: (documentId: number, sectionName: string, jobId: number) => Promise<string>
+  tailorDocument: (request: TailorRequest) => Promise<TailorResult | { queued: true }>
+  verifyDocument: (jobId: number, documentId: number, docType: 'cv' | 'cover_letter') => Promise<VerificationResult | { queued: true }>
+  regenerateSection: (documentId: number, sectionName: string, jobId: number, extraContext?: string) => Promise<string | { queued: true }>
   getScanStatus: () => Promise<ScanStatus>
   clearScanResult: () => Promise<void>
   onScanProgress: (cb: (msg: string) => void) => () => void
   clearSeenUrls: () => Promise<void>
   clearAllData: () => Promise<void>
   openExternal: (url: string) => Promise<void>
+  listAIQueue: () => Promise<AIQueueItem[]>
+  retryAIQueueItem: (id: number) => Promise<AIQueueItem[]>
+  removeAIQueueItem: (id: number) => Promise<AIQueueItem[]>
 }
 
 declare global {

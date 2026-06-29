@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Sidebar from './components/Sidebar'
+import Notifications from './components/Notifications'
 import Dashboard from './pages/Dashboard'
 import JobsPage from './pages/JobsPage'
 import PipelinePage from './pages/PipelinePage'
@@ -38,6 +39,7 @@ export default function App() {
     <div className="app">
       <Sidebar current={page} onNavigate={setPage} />
       <main className="main">{renderPage()}</main>
+      <Notifications />
     </div>
   )
 }

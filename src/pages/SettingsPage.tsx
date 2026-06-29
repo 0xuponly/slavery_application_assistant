@@ -86,27 +86,29 @@ export default function SettingsPage() {
             <input value={settings.user_email} onChange={(e) => update('user_email', e.target.value)} />
           </div>
         </div>
-        <div className="form-group">
-          <label>Phone</label>
-          <input value={settings.user_phone} onChange={(e) => update('user_phone', e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label>Country</label>
-          <input
-            list="countries"
-            value={settings.user_country}
-            onChange={(e) => update('user_country', e.target.value)}
-            placeholder="Start typing your country..."
-            style={settings.user_country && !isRecognizedCountry(settings.user_country) ? { borderColor: 'var(--danger)' } : undefined}
-          />
-          <datalist id="countries">
-            {COUNTRIES.map((c) => <option key={c} value={c} />)}
-          </datalist>
-          {settings.user_country && !isRecognizedCountry(settings.user_country) && (
-            <p style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
-              Country not recognized — scan jobs location won't default to it.
-            </p>
-          )}
+        <div className="form-row">
+          <div className="form-group">
+            <label>Phone</label>
+            <input value={settings.user_phone} onChange={(e) => update('user_phone', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Country</label>
+            <input
+              list="countries"
+              value={settings.user_country}
+              onChange={(e) => update('user_country', e.target.value)}
+              placeholder="Start typing your country..."
+              style={settings.user_country && !isRecognizedCountry(settings.user_country) ? { borderColor: 'var(--danger)' } : undefined}
+            />
+            <datalist id="countries">
+              {COUNTRIES.map((c) => <option key={c} value={c} />)}
+            </datalist>
+            {settings.user_country && !isRecognizedCountry(settings.user_country) && (
+              <p style={{ fontSize: 11, color: 'var(--danger)', marginTop: 4 }}>
+                Country not recognized — scan jobs location won't default to it.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

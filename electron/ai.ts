@@ -2,6 +2,91 @@ import { getSettings, listApiModels, getDocument, updateDocument, updateDocument
 import type { ApiModelConfig, Job, TailorRequest, TailorResult, VerificationResult } from './types'
 import { createDocument, getJob } from './database'
 
+export class RateLimitError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RateLimitError'
+  }
+}
+
+interface CallAIResult {
+  content: string | null
+  modelUsed: string | null
+  rateLimited: boolean
+  errors: string[]
+}
+
+/**
+ * Try all configured AI models.
+ * - Returns content + modelUsed on first success.
+ * - If all fail and at least one returned 429, throws RateLimitError.
+ * - If all fail for other reasons, throws Error with collected error messages.
+ */
+async function callAI(
+  systemPrompt: string,
+  userPrompt: string,
+  temperature = 0.7,
+  timeoutMs = 20000
+): Promise<CallAIResult> {
+  const models: ApiModelConfig[] = listApiModels()
+  if (models.length === 0) throw new Error('No AI models configured. Add one in Settings.')
+
+  let content: string | null = null
+  let modelUsed: string | null = null
+  let rateLimited = false
+  const errors: string[] = []
+
+  for (const model of models) {
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (model.api_key) headers['Authorization'] = `Bearer ${model.api_key}`
+      const abort = new AbortController()
+      const timer = setTimeout(() => abort.abort(), timeoutMs)
+      const response = await fetch(`${model.base_url}/chat/completions`, {
+        method: 'POST',
+        headers,
+        signal: abort.signal,
+        body: JSON.stringify({
+          model: model.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          temperature
+        })
+      })
+      clearTimeout(timer)
+      if (response.ok) {
+        const data = (await response.json()) as { choices: { message: { content: string } }[] }
+        content = data.choices[0]?.message?.content ?? null
+        if (content) {
+          modelUsed = model.name || model.model
+          break
+        }
+        errors.push(`${model.name}: empty response`)
+      } else if (response.status === 429) {
+        rateLimited = true
+        errors.push(`${model.name}: rate limited (429)`)
+      } else {
+        const errText = await response.text().catch(() => '')
+        errors.push(`${model.name}: HTTP ${response.status}`)
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      errors.push(`${model.name}: ${msg.includes('aborted') ? 'timeout' : msg}`)
+    }
+  }
+
+  if (!content && rateLimited) {
+    throw new RateLimitError(`All AI models failed (rate limited):\n${errors.join('\n')}`)
+  }
+  if (!content) {
+    throw new Error(`All AI models failed:\n${errors.join('\n')}`)
+  }
+
+  return { content, modelUsed, rateLimited: false, errors: [] }
+}
+
 export async function tailorDocument(request: TailorRequest): Promise<TailorResult> {
   const settings = getSettings()
   const job = getJob(request.job_id)
@@ -50,49 +135,15 @@ ${baseContent}
 
 ${request.document_type === 'cover_letter' ? 'Write a tailored cover letter.' : 'Tailor this CV for the role.'}`
 
-  async function callModel(model: ApiModelConfig, signal?: AbortSignal): Promise<string | null> {
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (model.api_key) headers['Authorization'] = `Bearer ${model.api_key}`
-      const response = await fetch(`${model.base_url}/chat/completions`, {
-        method: 'POST',
-        headers,
-        signal,
-        body: JSON.stringify({
-          model: model.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.7
-        })
-      })
-      if (!response.ok) return null
-      const data = (await response.json()) as {
-        choices: { message: { content: string } }[]
-      }
-      return data.choices[0]?.message?.content ?? null
-    } catch {
-      return null
-    }
-  }
-
-  let content: string | null = null
+  let content: string
   let modelUsed: string | null = null
-
-  const models = listApiModels()
-  for (const model of models) {
-    const abort = new AbortController()
-    const timer = setTimeout(() => abort.abort(), 20000)
-    content = await callModel(model, abort.signal)
-    clearTimeout(timer)
-    if (content) {
-      modelUsed = model.name || model.model
-      break
-    }
-  }
-
-  if (!content) {
+  try {
+    const result = await callAI(systemPrompt, userPrompt, 0.7)
+    content = result.content!
+    modelUsed = result.modelUsed
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err
+    // Non-rate-limit failure: fall back to base CV / template
     content = generateFallbackDocument(job, request.document_type, baseContent, settings)
   }
 
@@ -102,7 +153,7 @@ ${request.document_type === 'cover_letter' ? 'Write a tailored cover letter.' : 
     content,
     job.id,
     false,
-    modelUsed
+    modelUsed || undefined
   )
 
   return { content, document_id: doc.id }
@@ -290,43 +341,19 @@ Evaluate how well this document is tailored for this specific job.`
 
   let result: VerificationResult = { score: 0, passed: false, feedback: 'Verification failed — no AI model responded.' }
 
-  const models = listApiModels()
-  for (const model of models) {
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (model.api_key) headers['Authorization'] = `Bearer ${model.api_key}`
-      const abort = new AbortController()
-      const timer = setTimeout(() => abort.abort(), 20000)
-      const response = await fetch(`${model.base_url}/chat/completions`, {
-        method: 'POST',
-        headers,
-        signal: abort.signal,
-        body: JSON.stringify({
-          model: model.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.3
-        })
-      })
-      clearTimeout(timer)
-      if (response.ok) {
-        const data = (await response.json()) as { choices: { message: { content: string } }[] }
-        const text = data.choices[0]?.message?.content
-        if (text) {
-          const parsed = JSON.parse(text.replace(/```json|```/g, '').trim()) as VerificationResult
-          result = {
-            score: Math.max(0, Math.min(100, parsed.score)),
-            passed: !!parsed.passed,
-            feedback: parsed.feedback || ''
-          }
-          break
-        }
+  try {
+    const aiResult = await callAI(systemPrompt, userPrompt, 0.3)
+    if (aiResult.content) {
+      const parsed = JSON.parse(aiResult.content.replace(/```json|```/g, '').trim()) as VerificationResult
+      result = {
+        score: Math.max(0, Math.min(100, parsed.score)),
+        passed: !!parsed.passed,
+        feedback: parsed.feedback || ''
       }
-    } catch {
-      // try next model
     }
+  } catch (err) {
+    if (err instanceof RateLimitError) throw err
+    // Non-rate-limit: keep default result (score 0)
   }
 
   updateDocumentVerification(documentId, result.score, result.feedback)
@@ -336,9 +363,9 @@ Evaluate how well this document is tailored for this specific job.`
 export async function regenerateSection(
   documentId: number,
   sectionName: string,
-  jobId: number
+  jobId: number,
+  extraContext?: string
 ): Promise<string> {
-  const settings = getSettings()
   const job = getJob(jobId)
   if (!job) throw new Error('Job not found')
 
@@ -382,43 +409,11 @@ ${doc.content}
 
 Current "${sectionName}" section content:
 ${sectionContent}
-
+${extraContext && extraContext.trim() ? `\nAdditional context from the user (follow these instructions when rewriting):\n${extraContext.trim()}\n` : ''}
 Rewrite only this section's body.`
 
-  const models = listApiModels()
-  let newBody: string | null = null
-
-  for (const model of models) {
-    try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (model.api_key) headers['Authorization'] = `Bearer ${model.api_key}`
-      const abort = new AbortController()
-      const timer = setTimeout(() => abort.abort(), 20000)
-      const response = await fetch(`${model.base_url}/chat/completions`, {
-        method: 'POST',
-        headers,
-        signal: abort.signal,
-        body: JSON.stringify({
-          model: model.model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          temperature: 0.7
-        })
-      })
-      clearTimeout(timer)
-      if (response.ok) {
-        const data = (await response.json()) as { choices: { message: { content: string } }[] }
-        newBody = data.choices[0]?.message?.content ?? null
-        if (newBody) break
-      }
-    } catch {
-      // try next model
-    }
-  }
-
-  if (!newBody) throw new Error('All AI models failed. Try again later.')
+  const result = await callAI(systemPrompt, userPrompt, 0.7)
+  let newBody = result.content!
 
   const resultLines = [...doc.content.split('\n')]
   resultLines.splice(section.startIdx + 1, section.endIdx - section.startIdx - 1, ...newBody.trim().split('\n'))

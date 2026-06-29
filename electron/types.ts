@@ -183,3 +183,20 @@ export interface ScanStatus {
   result: ScanResult | null
   startedAt: number | null
 }
+
+export type AIQueueItemType = 'generate_cv' | 'generate_cover_letter' | 'regenerate_section' | 'verify'
+export type AIQueueItemStatus = 'pending' | 'processing' | 'failed'
+
+export interface AIQueueItem {
+  id: number
+  type: AIQueueItemType
+  jobId: number
+  documentId?: number
+  sectionName?: string
+  extraContext?: string
+  status: AIQueueItemStatus
+  attempts: number
+  lastError?: string
+  createdAt: number
+  nextRetryAt: number
+}

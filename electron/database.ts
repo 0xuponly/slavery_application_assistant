@@ -4,6 +4,7 @@ import { join } from 'path'
 import { cleanDescription, scrapePostingDateFromUrl } from './jobScraper'
 import type {
   ApiModelConfig,
+  AIQueueItem,
   Application,
   CreateJobInput,
   DashboardStats,
@@ -61,6 +62,7 @@ interface Store {
   api_models: ApiModelConfig[]
   nextId: number
   seen_urls: string[]
+  ai_queue: AIQueueItem[]
 }
 
 let store: Store | null = null
@@ -94,7 +96,8 @@ function defaultStore(): Store {
     },
     api_models: [],
     nextId: 1,
-    seen_urls: []
+    seen_urls: [],
+    ai_queue: []
   }
 }
 
@@ -135,6 +138,9 @@ function loadStore(): Store {
     // Migrate existing job URLs into seen_urls (normalized for dedup)
     if (!store.seen_urls) {
       store.seen_urls = []
+    }
+    if (!store.ai_queue) {
+      store.ai_queue = []
     }
     let jobsMigrated = false
     for (const j of store.jobs) {
@@ -737,5 +743,40 @@ export function clearAllData(): void {
   s.seen_urls = []
   s.nextId = 1
   delete s.settings.job_dates_backfilled
+  persistStore()
+}
+
+// AI Queue
+
+export function addAIQueueItem(item: Omit<AIQueueItem, 'id' | 'createdAt' | 'nextRetryAt' | 'attempts' | 'status'>): AIQueueItem {
+  const s = loadStore()
+  const queued: AIQueueItem = {
+    ...item,
+    id: s.nextId++,
+    status: 'pending',
+    attempts: 0,
+    createdAt: Date.now(),
+    nextRetryAt: Date.now()
+  }
+  s.ai_queue.push(queued)
+  persistStore()
+  return queued
+}
+
+export function getAIQueue(): AIQueueItem[] {
+  return loadStore().ai_queue ?? []
+}
+
+export function updateAIQueueItem(id: number, updates: Partial<AIQueueItem>): void {
+  const s = loadStore()
+  const idx = s.ai_queue.findIndex((q) => q.id === id)
+  if (idx === -1) return
+  s.ai_queue[idx] = { ...s.ai_queue[idx], ...updates }
+  persistStore()
+}
+
+export function removeAIQueueItem(id: number): void {
+  const s = loadStore()
+  s.ai_queue = s.ai_queue.filter((q) => q.id !== id)
   persistStore()
 }
