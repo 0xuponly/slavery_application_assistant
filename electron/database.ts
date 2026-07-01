@@ -394,6 +394,11 @@ export function createDocument(
 export function deleteDocument(id: number): void {
   const s = loadStore()
   s.documents = s.documents.filter((d) => d.id !== id)
+  // Clear any application references to the deleted document
+  for (const a of s.applications) {
+    if (a.cv_document_id === id) a.cv_document_id = null
+    if (a.cover_letter_document_id === id) a.cover_letter_document_id = null
+  }
   persistStore()
 }
 
