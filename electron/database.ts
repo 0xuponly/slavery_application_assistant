@@ -87,6 +87,37 @@ function defaultStore(): Store {
   }
 }
 
+function stripLegacyEncryptedFields(s: Store): boolean {
+  let changed = false
+  if (s.settings) {
+    for (const k of Object.keys(s.settings)) {
+      const v = s.settings[k]
+      if (typeof v === 'string' && v.startsWith('$enc$')) {
+        try {
+          s.settings[k] = safeStorage.decryptString(Buffer.from(v.slice('$enc$'.length), 'hex'))
+          changed = true
+        } catch {
+          s.settings[k] = ''
+          changed = true
+        }
+      }
+    }
+  }
+  if (s.api_models) {
+    s.api_models = s.api_models.map((m) => {
+      if (typeof m.api_key === 'string' && m.api_key.startsWith('$enc$')) {
+        try {
+          return { ...m, api_key: safeStorage.decryptString(Buffer.from(m.api_key.slice('$enc$'.length), 'hex')) }
+        } catch {
+          return { ...m, api_key: '' }
+        }
+      }
+      return m
+    })
+  }
+  return changed
+}
+
 function loadStore(): Store {
   if (store) return store
   const path = getStorePath()
@@ -98,6 +129,10 @@ function loadStore(): Store {
     const dek = getOrCreateDek()
     try {
       store = decryptJson<Store>(raw, dek)
+      // Strip any leftover legacy field-level encryption wrappers that may have
+      // been written by an earlier version of the app before file-level
+      // encryption was introduced.
+      if (stripLegacyEncryptedFields(store)) persistStore()
     } catch {
       // Either file is legacy plaintext, or DEK is wrong. Try legacy plaintext
       // parse; if that fails, start fresh.
@@ -109,31 +144,7 @@ function loadStore(): Store {
           !raw.startsWith('enc:') &&
           (raw.includes('"$enc$"') || Object.keys(parsed.settings || {}).length > 0)
         if (looksLegacy) {
-          // Strip legacy field-level encryption wrappers from old format
-          for (const k of Object.keys(parsed.settings)) {
-            const v = parsed.settings[k]
-            if (typeof v === 'string' && v.startsWith('$enc$')) {
-              try {
-                parsed.settings[k] = safeStorage.decryptString(
-                  Buffer.from(v.slice('$enc$'.length), 'hex')
-                )
-              } catch {
-                parsed.settings[k] = ''
-              }
-            }
-          }
-          if (parsed.api_models) {
-            parsed.api_models = parsed.api_models.map((m) => {
-              if (typeof m.api_key === 'string' && m.api_key.startsWith('$enc$')) {
-                try {
-                  return { ...m, api_key: safeStorage.decryptString(Buffer.from(m.api_key.slice('$enc$'.length), 'hex')) }
-                } catch {
-                  return { ...m, api_key: '' }
-                }
-              }
-              return m
-            })
-          }
+          stripLegacyEncryptedFields(parsed)
           store = parsed
         } else {
           store = defaultStore()

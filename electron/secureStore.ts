@@ -41,7 +41,10 @@ export function getOrCreateDek(required = false): Buffer {
     }
     try {
       const buf = Buffer.from(stored, 'hex')
-      return safeStorage.decryptString(buf)
+      // safeStorage.decryptString returns the original plaintext that was
+      // passed to encryptString — in our case that was `dek.toString('hex')`,
+      // a 64-char hex string. Convert back to 32 raw bytes for AES-256-GCM.
+      return Buffer.from(safeStorage.decryptString(buf), 'hex')
     } catch {
       // Sealed key corrupted; regenerate
     }
@@ -51,7 +54,8 @@ export function getOrCreateDek(required = false): Buffer {
   const dek = randomBytes(KEY_LEN)
   if (safeStorage.isEncryptionAvailable()) {
     const sealed = safeStorage.encryptString(dek.toString('hex'))
-    writeFileSync(keyPath, sealed.toString('hex'))
+    const sealedHex = Buffer.isBuffer(sealed) ? sealed.toString('hex') : String(sealed)
+    writeFileSync(keyPath, sealedHex)
   } else {
     if (required) {
       throw new Error(
