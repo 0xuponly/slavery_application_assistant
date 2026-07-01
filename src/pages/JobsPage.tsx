@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api'
 import Modal from '../components/Modal'
+import { notify } from '../components/Notifications'
 import type { CreateJobInput, Document, Job } from '../types'
 import { STATUS_COLORS, STATUS_LABELS } from '../types'
 import JobDetail from './JobDetail'
@@ -277,17 +278,25 @@ export default function JobsPage() {
   }
 
   async function handleBatchTailor(type: 'cv' | 'cover_letter') {
+    const allDocs = await api.listDocuments()
+    const existing = new Set(
+      allDocs.filter((d: Document) => d.job_id !== null && d.type === type).map((d: Document) => d.job_id!)
+    )
+    // Only process jobs that match the current filter/search and don't yet
+    // have a document of this type. Without a filter, this is just all jobs.
+    const needs = filteredJobs.filter((j) => !existing.has(j.id))
+    if (needs.length === 0) {
+      notify(`All visible jobs already have a ${type === 'cv' ? 'CV' : 'cover letter'}.`, 'info')
+      return
+    }
+
     setGenerating(type)
     setGenCount(0)
+    setGenTotal(needs.length)
+    let queued = 0
+    let failed = 0
+    let success = 0
     try {
-      const allDocs = await api.listDocuments()
-      const existing = new Set(
-        allDocs.filter((d: Document) => d.job_id !== null && d.type === type).map((d: Document) => d.job_id!)
-      )
-      const needs = jobs.filter((j) => !existing.has(j.id))
-      setGenTotal(needs.length)
-      if (needs.length === 0) return
-
       const CONCURRENCY = 3
       for (let i = 0; i < needs.length; i += CONCURRENCY) {
         const batch = needs.slice(i, i + CONCURRENCY)
@@ -295,12 +304,17 @@ export default function JobsPage() {
           batch.map(async (job) => {
             try {
               const result = await api.tailorDocument({ job_id: job.id, document_type: type })
+              if (result && typeof result === 'object' && 'queued' in result) {
+                queued++
+                return
+              }
               const app = await api.getOrCreateApplication(job.id)
               await api.updateApplication(app.id, {
                 [type === 'cv' ? 'cv_document_id' : 'cover_letter_document_id']: result.document_id
               })
+              success++
             } catch {
-              // Silently skip failed generations
+              failed++
             }
             setGenCount((c) => c + 1)
           })
@@ -308,6 +322,14 @@ export default function JobsPage() {
       }
     } finally {
       setGenerating(null)
+    }
+    const label = type === 'cv' ? 'CVs' : 'cover letters'
+    const parts: string[] = []
+    if (success > 0) parts.push(`${success} ${label} generated`)
+    if (queued > 0) parts.push(`${queued} rate-limited and queued`)
+    if (failed > 0) parts.push(`${failed} failed`)
+    if (parts.length > 0) {
+      notify(parts.join(' · '), failed > 0 ? 'error' : queued > 0 ? 'info' : 'success')
     }
   }
 
